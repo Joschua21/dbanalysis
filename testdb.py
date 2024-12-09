@@ -15,6 +15,12 @@ thresholds = {
     'DIG-R-0017': 53451,
     'DIG-R-0018': 53625
 } #thresholds of sessids when animals progressed to protocol. Will exclude pretraining from dataframes_trials
+color_palette = {
+    'DIG-R-0015': {'hit': 'darkblue', 'non_hit': 'lightblue'},
+    'DIG-R-0016': {'hit': 'darkorange', 'non_hit': 'lightcoral'},
+    'DIG-R-0017': {'hit': 'darkgreen', 'non_hit': 'lightgreen'},
+    'DIG-R-0018': {'hit': 'darkred', 'non_hit': 'lightpink'}
+}
 
 dataframes_sess = {}
 dataframes_trials = {}
@@ -48,21 +54,6 @@ for subject in subjects:
     """
     result = pd.read_sql(query_trials, dbe)
     dataframes_trials[subject] = result
-
-#Average #pokes for hit per session - useless
-for subject in subjects:
-    hit_trials = dataframes_trials[subject][dataframes_trials[subject]['hit'] == 1]
-    avg_pokes = hit_trials.groupby('sessid')['n_pokes'].mean().reset_index()
-
-    x_values = range(len(avg_pokes))  # Regularly spaced values for the x-axis
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_values, avg_pokes['n_pokes'], marker='o')
-
-    plt.xlabel('Session')
-    plt.ylabel('Average Number of Pokes for Hit Trials')
-    plt.title(f'Average Number of Pokes for Hit Trials - {subject}')
-
-    plt.show()
 
 
 #Moving Average of accuracy at trial i (cummulative hits up to trial i / i) with flexible window size
@@ -101,40 +92,45 @@ for subject in subjects:
 
 
 #Moving Average with window-size of n-50; n-10
-for subject in subjects:
-    # Set window size conditionally
-    if subject in ["DIG-R-0015", "DIG-R-0017"]:
-        window_size = 50
-    elif subject in ["DIG-R-0016", "DIG-R-0018"]:
-        window_size = 10
-    else:
-        raise ValueError(f"Unknown subject ID: {subject}")
+def plot_moving_avg_accuracy(dataframes_trials, color_palette):
+    for subject in subjects:
+        # Set window size conditionally
+        if subject in ["DIG-R-0015", "DIG-R-0017"]:
+            window_size = 50
+        elif subject in ["DIG-R-0016", "DIG-R-0018"]:
+            window_size = 10
+        else:
+            raise ValueError(f"Unknown subject ID: {subject}")
 
-    trials = dataframes_trials[subject]
+        trials = dataframes_trials[subject]
 
-    # Calculate moving average with the chosen window size
-    trials['moving_avg_accuracy'] = (
-        trials['hit']
-        .rolling(window=window_size, center=False, min_periods=1)
-        .mean()
-    )
+        # Calculate moving average with the chosen window size
+        trials['moving_avg_accuracy'] = (
+            trials['hit']
+            .rolling(window=window_size, center=False, min_periods=1)
+            .mean()
+        )
 
-    # Plot the moving average of accuracy
-    plt.figure(figsize=(10, 6))
-    plt.plot(
-        range(len(trials)),
-        trials['moving_avg_accuracy'] * 100,
-        marker='o',
-        label=f'Moving Avg Accuracy (Window Size: {window_size})'
-    )
-    plt.xlabel('Trials (Relative Index)')
-    plt.ylabel('Moving Average of Accuracy')
-    plt.title(f'Moving Average of Accuracy Across Trials - {subject}')
-    plt.grid(True)
-    plt.legend()
-    plt.tight_layout()
-    plt.show()
+        # Get the subject-specific color
+        subject_color = color_palette[subject]['hit']
 
+        # Plot the moving average of accuracy
+        plt.figure(figsize=(12, 6))
+        plt.plot(
+            range(len(trials)),
+            trials['moving_avg_accuracy'] * 100,  # Convert to percentage
+            marker='o',
+            color=subject_color,
+            label=f'Moving Avg Accuracy (Window Size: {window_size})'
+        )
+        plt.xlabel('Trials (Relative Index)')
+        plt.ylabel('Moving Average of Accuracy (%)')
+        plt.title(f'Moving Average of Accuracy Across Trials - {subject}')
+        plt.grid(True)
+        plt.legend()
+        plt.tight_layout()
+        plt.show()
+plot_moving_avg_accuracy(dataframes_trials, color_palette)
 
 # % of Trials completed per session - useless
 trials_per_session_data = {}
@@ -250,41 +246,46 @@ for subject in subjects:
 
 #Plotting Hits per Session
 
-plt.figure(figsize=(10, 6))
 line_styles = {
     'DIG-R-0015': '-',
     'DIG-R-0016': '--',
     'DIG-R-0017': '-',
     'DIG-R-0018': '--',
 }
+legend_order = ['DIG-R-0015', 'DIG-R-0016', 'DIG-R-0017', 'DIG-R-0018']
 
 # Plot each subject's data
-for subject, df in dataframes_sess.items():
-    session_indices = range(1, len(df) + 1)  # Generate session indices
-    plt.plot(
-        session_indices,
-        df['hits'],
-        marker='o',
-        linestyle=line_styles[subject],
-        label=subject
-    )
+def plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_order):
+    plt.figure(figsize=(12, 6))
 
-# Customize the legend order and style
-legend_order = ['DIG-R-0015', 'DIG-R-0016', 'DIG-R-0017', 'DIG-R-0018']
-handles, labels = plt.gca().get_legend_handles_labels()
-sorted_handles_labels = sorted(zip(handles, labels), key=lambda x: legend_order.index(x[1]))
-sorted_handles, sorted_labels = zip(*sorted_handles_labels)
+    for subject, df in dataframes_sess.items():
+        session_indices = range(1, len(df) + 1)  # Generate session indices
+        subject_color = color_palette[subject]['hit']
+        plt.plot(
+            session_indices,
+            df['hits'],
+            marker='o',
+            color=subject_color,
+            linestyle=line_styles[subject],
+            label=subject
+        )
 
-# Add labels, legend, and title
-plt.xlabel('Session (Relative Index)')
-plt.ylabel('Hits')
-plt.title('Sessions vs. Hits for All Subjects')
-plt.legend(sorted_handles, sorted_labels, title='Subject')
-plt.grid(True)
-plt.tight_layout()
+    # Customize the legend order and style
+    handles, labels = plt.gca().get_legend_handles_labels()
+    sorted_handles_labels = sorted(zip(handles, labels), key=lambda x: legend_order.index(x[1]))
+    sorted_handles, sorted_labels = zip(*sorted_handles_labels)
 
-plt.show()
+    # Add labels, legend, and title
+    plt.xlabel('Session')
+    plt.ylabel('Accuracy')
+    plt.title('Accuracy across Sessions')
+    plt.legend(sorted_handles, sorted_labels, title='Subject', fontsize = 12)
+    plt.grid(True)
+    plt.tight_layout()
 
+    plt.show()
+
+plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_order)
 
 #Poke identities for all trials (separated into hit/no hit)
 def process_parsed_events_all_trials(data, hit_only=True):
@@ -325,14 +326,6 @@ def process_parsed_events_all_trials(data, hit_only=True):
 
     return poke_counts, poke_identities
 
-
-# Color palette for subjects
-color_palette = {
-    'DIG-R-0015': {'hit': 'darkblue', 'non_hit': 'lightblue'},
-    'DIG-R-0016': {'hit': 'darkorange', 'non_hit': 'lightcoral'},
-    'DIG-R-0017': {'hit': 'darkgreen', 'non_hit': 'lightgreen'},
-    'DIG-R-0018': {'hit': 'darkred', 'non_hit': 'lightpink'}
-}
 
 # Plot poke distributions for hit and non-hit trials
 for subject in subjects:
@@ -451,12 +444,14 @@ for subject in subjects:
     # Create evenly spaced x-axis points
     x_points = list(range(1, len(biases) + 1))
 
+    subject_color = color_palette[subject]['hit']
+
     # Plot
     plt.figure(figsize=(10, 6))
-    plt.plot(x_points, biases, marker='o', linestyle='-', label=f"Subject {subject}")
-    plt.ylim(-1, 1)
+    plt.plot(x_points, biases, marker='o', color = subject_color, linestyle='-', label=f"Subject {subject}")
+    plt.ylim(-1.1, 1.1)
     plt.xlabel('Session Number')
-    plt.ylabel('Bias ((R% - L%) / (R% + L%))')
+    plt.ylabel('Bias')
     plt.title(f'Bias Across Sessions for Subject {subject}')
     plt.axhline(0, color='black', linestyle='--', linewidth=0.8)  # Add horizontal line at y=0
     plt.grid()
