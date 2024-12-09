@@ -40,7 +40,7 @@ dataframes_sess['DIG-R-0018'].iloc[0, dataframes_sess['DIG-R-0018'].columns.get_
 #Extracts variables for all trials for each subject
 for subject in subjects:
     query_trials = f"""
-        SELECT x.subjid, x.hit, x.viol, x.RT, x.n_pokes, x.sessid, x.parsed_events, x.trialid
+        SELECT x.subjid, x.hit, x.viol, x.RT, x.n_pokes, x.sessid, x.parsed_events, x.trialid, x.data
         FROM beh.trialsview x
         WHERE subjid = '{subject}'
         AND x.sessid >= {thresholds[subject]}
@@ -284,3 +284,181 @@ plt.grid(True)
 plt.tight_layout()
 
 plt.show()
+
+
+#Poke identities for all trials (separated into hit/no hit)
+def process_parsed_events_all_trials(data, hit_only=True):
+    poke_identities = {
+        'MidRIn': 0, 'TopRIn': 0, 'BotRIn': 0,
+        'MidCIn': 0, 'BotCIn': 0,
+        'MidLIn': 0, 'TopLIn': 0, 'BotLIn': 0
+    }
+    poke_counts = []
+
+    # Iterate through each trial's parsed_events
+    for trial, is_hit in data:
+        if hit_only and is_hit != 1:
+            continue
+        elif not hit_only and is_hit != 0:
+            continue
+
+        parsed_events = json.loads(trial)  # Deserialize the JSON
+
+        # Process Events to count pokes and track identities
+        poke_events = {key: value for key, value in parsed_events['vals']['Events'].items() if "In" in key}
+
+        # Count pokes and track identities
+        total_pokes = 0
+        for key, value in poke_events.items():
+            if key in parsed_events['info']['Events'] and "In" in key:
+                dim_value = parsed_events['info']['Events'][key]['dim__']
+                if len(dim_value) > 1:  # Check if dim__ exists and has multiple values
+                    poke_count = dim_value[1]  # Take the second value from 'dim__'
+                    total_pokes += poke_count
+
+                    # Track poke identities
+                    if key in poke_identities:
+                        poke_identities[key] += poke_count
+                else:
+                    print("Error: No second value exists")
+        poke_counts.append(total_pokes)
+
+    return poke_counts, poke_identities
+
+
+# Color palette for subjects
+color_palette = {
+    'DIG-R-0015': {'hit': 'darkblue', 'non_hit': 'lightblue'},
+    'DIG-R-0016': {'hit': 'darkorange', 'non_hit': 'lightcoral'},
+    'DIG-R-0017': {'hit': 'darkgreen', 'non_hit': 'lightgreen'},
+    'DIG-R-0018': {'hit': 'darkred', 'non_hit': 'lightpink'}
+}
+
+# Plot poke distributions for hit and non-hit trials
+for subject in subjects:
+    result = dataframes_trials[subject]
+
+    # For hit trials
+    hit_poke_counts, hit_poke_identities = process_parsed_events_all_trials(zip(result['parsed_events'], result['hit']),
+                                                                            hit_only=True)
+
+    # For non-hit trials
+    non_hit_poke_counts, non_hit_poke_identities = process_parsed_events_all_trials(
+        zip(result['parsed_events'], result['hit']), hit_only=False)
+
+    # Create separate figures for hit and non-hit trials
+    plt.figure(figsize=(6, 4))
+    hit_counts = pd.Series(hit_poke_counts).value_counts().sort_index()
+    hit_counts.plot(kind='bar', color=color_palette[subject]['hit'], edgecolor='black')
+    plt.title(f'Hit Trials - Poke Distribution\n{subject}')
+    plt.xlabel('Number of Pokes')
+    plt.ylabel('Frequency')
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    plt.show()
+
+    plt.figure(figsize=(6, 4))
+    non_hit_counts = pd.Series(non_hit_poke_counts).value_counts().sort_index()
+    non_hit_counts.plot(kind='bar', color=color_palette[subject]['non_hit'], edgecolor='black')
+    plt.title(f'Non-Hit Trials - Poke Distribution\n{subject}')
+    plt.xlabel('Number of Pokes')
+    plt.ylabel('Frequency')
+    plt.xticks(rotation=0)
+    plt.tight_layout()
+    plt.show()
+
+# Calculate trial type performance
+for subject in subjects:
+    result = dataframes_trials[subject]
+
+    # Count left and right trials
+    left_trials = result[result['parsed_events'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'L')]
+    right_trials = result[result['parsed_events'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'R')]
+
+
+    # Performance calculation
+    def calculate_performance(trials):
+        total_trials = len(trials)
+        hits = trials[trials['hit'] == 1]
+
+        # Extract SoundCueSide from the 'data' column JSON
+        correct_choice = trials[trials.apply(lambda row:
+                                             json.loads(row['data'])['vals'].get('choice') ==
+                                             json.loads(row['data'])['vals'].get('SoundCueSide'), axis=1)]
+
+        return {
+            'total_trials': total_trials,
+            'hit_percentage': len(hits) / total_trials * 100,
+            'correct_choice_percentage': len(correct_choice) / total_trials * 100
+        }
+
+
+    # Calculate trial type performance
+    for subject in subjects:
+        result = dataframes_trials[subject]
+
+        # Count left and right trials using the 'data' column
+        left_trials = result[result['data'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'L')]
+        right_trials = result[result['data'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'R')]
+
+        left_performance = calculate_performance(left_trials)
+        right_performance = calculate_performance(right_trials)
+
+        print(f"\nSubject {subject} Performance:")
+        print("Left Trials:")
+        print(f"  Total Trials: {left_performance['total_trials']}")
+        print(f"  Hit Percentage: {left_performance['hit_percentage']:.2f}%")
+        print(f"  Correct Choice Percentage: {left_performance['correct_choice_percentage']:.2f}%")
+        print("Right Trials:")
+        print(f"  Total Trials: {right_performance['total_trials']}")
+        print(f"  Hit Percentage: {right_performance['hit_percentage']:.2f}%")
+        print(f"  Correct Choice Percentage: {right_performance['correct_choice_percentage']:.2f}%")
+
+
+def calculate_session_bias(trials):
+    # Group trials by session ID
+    session_groups = trials.groupby('sessid')
+
+    biases = []
+
+    for _, session_data in session_groups:
+        # Calculate L hit % and R hit %
+        left_trials = session_data[session_data['data'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'L')]
+        right_trials = session_data[session_data['data'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'R')]
+
+        left_hits = len(left_trials[left_trials['hit'] == 1])
+        right_hits = len(right_trials[right_trials['hit'] == 1])
+
+        left_hit_percentage = (left_hits / len(left_trials)) * 100
+        right_hit_percentage = (right_hits / len(right_trials)) * 100
+
+        # Calculate bias
+        if left_hit_percentage + right_hit_percentage > 0:
+            bias = (right_hit_percentage - left_hit_percentage) / (right_hit_percentage + left_hit_percentage)
+        else:
+            bias = 0  # No trials for this session
+
+        biases.append(bias)
+
+    return biases
+
+for subject in subjects:
+    result = dataframes_trials[subject]
+
+    # Calculate session-wise bias
+    biases = calculate_session_bias(result)
+
+    # Create evenly spaced x-axis points
+    x_points = list(range(1, len(biases) + 1))
+
+    # Plot
+    plt.figure(figsize=(10, 6))
+    plt.plot(x_points, biases, marker='o', linestyle='-', label=f"Subject {subject}")
+    plt.ylim(-1, 1)
+    plt.xlabel('Session Number')
+    plt.ylabel('Bias ((R% - L%) / (R% + L%))')
+    plt.title(f'Bias Across Sessions for Subject {subject}')
+    plt.axhline(0, color='black', linestyle='--', linewidth=0.8)  # Add horizontal line at y=0
+    plt.grid()
+    plt.legend()
+    plt.show()
