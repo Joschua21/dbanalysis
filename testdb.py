@@ -40,7 +40,7 @@ dataframes_sess['DIG-R-0018'].iloc[0, dataframes_sess['DIG-R-0018'].columns.get_
 #Extracts variables for all trials for each subject
 for subject in subjects:
     query_trials = f"""
-        SELECT x.subjid, x.hit, x.viol, x.RT, x.n_pokes, x.sessid, x.parsed_events
+        SELECT x.subjid, x.hit, x.viol, x.RT, x.n_pokes, x.sessid, x.parsed_events, x.trialid
         FROM beh.trialsview x
         WHERE subjid = '{subject}'
         AND x.sessid >= {thresholds[subject]}
@@ -49,7 +49,7 @@ for subject in subjects:
     result = pd.read_sql(query_trials, dbe)
     dataframes_trials[subject] = result
 
-#Average #pokes for hit per session
+#Average #pokes for hit per session - useless
 for subject in subjects:
     hit_trials = dataframes_trials[subject][dataframes_trials[subject]['hit'] == 1]
     avg_pokes = hit_trials.groupby('sessid')['n_pokes'].mean().reset_index()
@@ -100,13 +100,13 @@ for subject in subjects:
 
 
 
-#Moving Average with window-size of n-30
+#Moving Average with window-size of n-50; n-10
 for subject in subjects:
     # Set window size conditionally
     if subject in ["DIG-R-0015", "DIG-R-0017"]:
-        window_size = 100
+        window_size = 50
     elif subject in ["DIG-R-0016", "DIG-R-0018"]:
-        window_size = 40
+        window_size = 10
     else:
         raise ValueError(f"Unknown subject ID: {subject}")
 
@@ -136,7 +136,7 @@ for subject in subjects:
     plt.show()
 
 
-# % of Trials completed per session
+# % of Trials completed per session - useless
 trials_per_session_data = {}
 
 for subject in subjects:
@@ -165,9 +165,86 @@ trials_per_session_data[subject]
 
 
 # Process parsed_events column
-for subject, df in dataframes_trials.items():
-    # Deserialize the parsed_events column
-    df['parsed_events'] = df['parsed_events'].apply(lambda x: json.loads(x))
+def process_parsed_events_hit_trials(data):
+    reward_state_count = 0
+    drink_state_count = 0
+    poke_counts = []
+
+    # Iterate through each trial's parsed_events
+    for trial, is_hit in data:
+        if is_hit != 1:  # Explicitly check if hit equals 1
+            continue
+
+        parsed_events = json.loads(trial)  # Deserialize the JSON
+
+        # 1. Process RewardState and drink_state_in_1
+        reward_state = parsed_events['vals']['States'].get('RewardState', [None, None])
+        drink_state_in = parsed_events['vals']['States'].get('drink_state_in_1', [None, None])
+
+        if reward_state[0] is not None or reward_state[1] is not None:
+            reward_state_count += 1
+            if drink_state_in[0] is not None or drink_state_in[1] is not None:
+                drink_state_count += 1
+
+        # 2. Process Events to count pokes and extract second value from 'dim__'
+        poke_events = {key: value for key, value in parsed_events['vals']['Events'].items() if "In" in key}
+
+        # Count pokes based on 'dim__' value (second value in the 'dim__' list)
+        total_pokes = 0
+        for key, value in poke_events.items():
+            if key in parsed_events['info']['Events'] and "In" in key:
+                dim_value = parsed_events['info']['Events'][key]['dim__']
+                if len(dim_value) > 1:  # Check if dim__ exists and has multiple values
+                    total_pokes += dim_value[1]  # Take the second value from 'dim__'
+                else:
+                    print("Error: No second value exists")
+        poke_counts.append(total_pokes)
+
+    # Calculate the percentage
+    drink_percentage = (drink_state_count / reward_state_count) * 100 if reward_state_count > 0 else 0
+
+    return drink_percentage, poke_counts
+
+for subject in subjects:
+    # Use the pre-existing dataframes_trials
+    result = dataframes_trials[subject]
+
+    # Process only hit trials
+    drink_percentage, poke_counts = process_parsed_events_hit_trials(zip(result['parsed_events'], result['hit']))
+
+    print(f"Subject: {subject}")
+    print(f"Percentage of trials with drink_state_in_1 given RewardState (for hit trials): {drink_percentage:.2f}%")
+    print(f"Total pokes per hit trial: {poke_counts}")
+
+#Distribution of #n Pokes
+for subject in subjects:
+    # Use the pre-existing dataframes_trials
+    data = dataframes_trials[subject]
+
+    # Filter trials based on the threshold for the specific subject
+    data_filtered = data[data['sessid'] >= thresholds[subject]]
+
+    # Process only the hit trials and get the poke counts
+    drink_percentage, poke_counts = process_parsed_events_hit_trials(
+        zip(data_filtered['parsed_events'], data_filtered['hit']))
+
+    # Count the distribution of the number of pokes (value counts)
+    poke_count_distribution = pd.Series(poke_counts).value_counts().sort_index()
+
+    # Plot the distribution as a histogram
+    plt.figure(figsize=(8, 6))
+    poke_count_distribution.plot(kind='bar', color='skyblue')
+
+    plt.title(f'Distribution of Pokes per Hit Trial for Subject {subject}')
+    plt.xlabel('Number of Pokes')
+    plt.ylabel('Frequency')
+    plt.xticks(rotation=0)
+    plt.grid(axis='y', linestyle='--', alpha=0.7)
+
+    plt.show()
+
+
+
 
 
 
