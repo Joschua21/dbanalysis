@@ -5,6 +5,7 @@ sys.path.insert(0, "/bpodautopy/bpodautopy")
 import db
 import json
 import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
 dbe = db.Engine()
 
@@ -132,33 +133,6 @@ def plot_moving_avg_accuracy(dataframes_trials, color_palette):
         plt.show()
 plot_moving_avg_accuracy(dataframes_trials, color_palette)
 
-# % of Trials completed per session - useless
-trials_per_session_data = {}
-
-for subject in subjects:
-    trials = dataframes_trials[subject]  # Trials data for the subject
-
-    # Group by session and calculate the total trials and hits per session
-    trials_per_session = trials.groupby('sessid').agg(
-        total_trials=('hit', 'count'),  # Total trials in the session
-        hits=('hit', 'sum')            # Number of hits in the session
-    ).reset_index()
-
-    # Calculate accuracy (hits/total_trials)
-    trials_per_session['accuracy'] = trials_per_session['hits'] / trials_per_session['total_trials']
-
-    # Store the result in the dictionary
-    trials_per_session_data[subject] = trials_per_session
-
-    # Print for inspection (optional)
-    print(f"Subject: {subject}")
-    print(trials_per_session.head())
-
-# Example of accessing data for a subject
-subject = 'DIG-R-0015'
-trials_per_session_data[subject]
-
-
 
 # Process parsed_events column
 def process_parsed_events_hit_trials(data):
@@ -212,7 +186,7 @@ for subject in subjects:
     print(f"Percentage of trials with drink_state_in_1 given RewardState (for hit trials): {drink_percentage:.2f}%")
     print(f"Total pokes per hit trial: {poke_counts}")
 
-#Distribution of #n Pokes
+#Distribution of #n Pokes --> see below, not used right now
 for subject in subjects:
     # Use the pre-existing dataframes_trials
     data = dataframes_trials[subject]
@@ -240,12 +214,7 @@ for subject in subjects:
     plt.show()
 
 
-
-
-
-
 #Plotting Hits per Session
-
 line_styles = {
     'DIG-R-0015': '-',
     'DIG-R-0016': '--',
@@ -253,8 +222,6 @@ line_styles = {
     'DIG-R-0018': '--',
 }
 legend_order = ['DIG-R-0015', 'DIG-R-0016', 'DIG-R-0017', 'DIG-R-0018']
-
-# Plot each subject's data
 def plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_order):
     plt.figure(figsize=(12, 6))
 
@@ -284,10 +251,9 @@ def plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_or
     plt.tight_layout()
 
     plt.show()
-
 plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_order)
 
-#Poke identities for all trials (separated into hit/no hit)
+#Poke identities and distribution for all trials (separated into hit/no hit)
 def process_parsed_events_all_trials(data, hit_only=True):
     poke_identities = {
         'MidRIn': 0, 'TopRIn': 0, 'BotRIn': 0,
@@ -325,9 +291,7 @@ def process_parsed_events_all_trials(data, hit_only=True):
         poke_counts.append(total_pokes)
 
     return poke_counts, poke_identities
-
-
-# Plot poke distributions for hit and non-hit trials
+# Plot poke distributions and identities for hit and non-hit trials
 for subject in subjects:
     result = dataframes_trials[subject]
 
@@ -339,7 +303,7 @@ for subject in subjects:
     non_hit_poke_counts, non_hit_poke_identities = process_parsed_events_all_trials(
         zip(result['parsed_events'], result['hit']), hit_only=False)
 
-    # Create separate figures for hit and non-hit trials
+    #Create plot of poke distribution hit trials
     plt.figure(figsize=(6, 4))
     hit_counts = pd.Series(hit_poke_counts).value_counts().sort_index()
     hit_counts.plot(kind='bar', color=color_palette[subject]['hit'], edgecolor='black')
@@ -350,6 +314,7 @@ for subject in subjects:
     plt.tight_layout()
     plt.show()
 
+    #plot poke distribution for non-hit trials
     plt.figure(figsize=(6, 4))
     non_hit_counts = pd.Series(non_hit_poke_counts).value_counts().sort_index()
     non_hit_counts.plot(kind='bar', color=color_palette[subject]['non_hit'], edgecolor='black')
@@ -357,6 +322,30 @@ for subject in subjects:
     plt.xlabel('Number of Pokes')
     plt.ylabel('Frequency')
     plt.xticks(rotation=0)
+    plt.tight_layout()
+    plt.show()
+
+    # Plot poke identities for hit trials
+    plt.figure(figsize=(8, 5))
+    poke_keys = list(hit_poke_identities.keys())
+    poke_values = list(hit_poke_identities.values())
+    plt.bar(poke_keys, poke_values, color=color_palette[subject]['hit'], edgecolor='black', alpha=0.7)
+    plt.title(f'Hit Trials - Poke Identities\n{subject}')
+    plt.xlabel('Poke Identity')
+    plt.ylabel('Count')
+    plt.xticks(rotation=45, ha='right')
+    plt.tight_layout()
+    plt.show()
+
+    # Plot poke identities for non-hit trials
+    plt.figure(figsize=(8, 5))
+    poke_keys = list(non_hit_poke_identities.keys())
+    poke_values = list(non_hit_poke_identities.values())
+    plt.bar(poke_keys, poke_values, color=color_palette[subject]['non_hit'], edgecolor='black', alpha=0.7)
+    plt.title(f'Non-Hit Trials - Poke Identities\n{subject}')
+    plt.xlabel('Poke Identity')
+    plt.ylabel('Count')
+    plt.xticks(rotation=45, ha='right')
     plt.tight_layout()
     plt.show()
 
@@ -457,3 +446,90 @@ for subject in subjects:
     plt.grid()
     plt.legend()
     plt.show()
+
+
+# Calculation of Percentage of non-hit trials with 0 pokes
+def calculate_zero_poke_trials(trials):
+    non_hit_trials = trials[trials['hit'] == 0]
+
+    zero_poke_trials = 0
+    total_non_hit_trials = len(non_hit_trials)
+
+    for trial, is_hit in zip(non_hit_trials['parsed_events'], non_hit_trials['hit']):
+        parsed_events = json.loads(trial)
+
+        # Count pokes
+        poke_events = {key: value for key, value in parsed_events['vals']['Events'].items() if "In" in key}
+
+        total_pokes = 0
+        for key, value in poke_events.items():
+            if key in parsed_events['info']['Events'] and "In" in key:
+                dim_value = parsed_events['info']['Events'][key]['dim__']
+                if len(dim_value) > 1:
+                    total_pokes += dim_value[1]
+
+        if total_pokes == 0:
+            zero_poke_trials += 1
+
+    # Calculate percentage
+    zero_poke_percentage = (zero_poke_trials / total_non_hit_trials) * 100 if total_non_hit_trials > 0 else 0
+
+    return zero_poke_percentage, zero_poke_trials, total_non_hit_trials
+
+
+# Calculation of RT and plotting of RT per session
+def analyze_reaction_times(dataframes_trials, dataframes_sess, color_palette):
+    # Overall average RT for each subject
+    for subject in subjects:
+        trials = dataframes_trials[subject]
+        overall_avg_rt = trials['RT'].mean()
+        print(f"Subject {subject} - Overall Average Reaction Time: {overall_avg_rt:.4f}")
+
+    # Plot Average RT per Session
+    plt.figure(figsize=(12, 6))
+
+    # Find the maximum number of sessions across all subjects
+    max_sessions = max(len(dataframes_sess[subject]) for subject in subjects)
+
+    for subject in subjects:
+        # Group trials by session and calculate mean RT for each session
+        trials = dataframes_trials[subject]
+
+        rt_per_session = trials.groupby('sessid')['RT'].mean()
+
+        # Create x points from 1 to max_sessions
+        x_points = list(range(1, len(rt_per_session) + 1))
+
+        # Use subject-specific hit color for plotting
+        subject_color = color_palette[subject]['hit']
+
+        # Plot RT for each session
+        plt.plot(
+            x_points,  # Use the actual number of existing sessions
+            rt_per_session,
+            marker='o',
+            color=subject_color,
+            label=subject
+        )
+
+    plt.xlabel('Session')
+    plt.ylabel('Average Reaction Time')
+    plt.title('Average Reaction Time Across Sessions')
+    plt.legend(title='Subject')
+    plt.grid(True)
+    plt.tight_layout()
+    plt.show()
+
+#Calculate average RT and plot reaction time per session
+analyze_reaction_times(dataframes_trials, dataframes_sess, color_palette)
+
+# Calculations of % of 0 pokes in not initiated trials
+print("Zero Poke Trials Analysis:")
+for subject in subjects:
+    result = dataframes_trials[subject]
+    zero_poke_percentage, zero_poke_trials, total_non_hit_trials = calculate_zero_poke_trials(result)
+
+    print(f"\nSubject {subject}:")
+    print(f"  Total Non-Hit Trials: {total_non_hit_trials}")
+    print(f"  Zero Poke Trials: {zero_poke_trials}")
+    print(f"  Percentage of Zero Poke Trials: {zero_poke_percentage:.2f}%")
