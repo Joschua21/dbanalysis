@@ -1,6 +1,6 @@
 import os
 import sys
-sys.path.insert(0, "/bpodautopy/bpodautopy")
+sys.path.insert(0, "C:\\Users\\josch\\PycharmProjects\\myenv1\\bpodautopy\\bpodautopy")
 
 import db
 import json
@@ -21,6 +21,12 @@ color_palette = {
     'DIG-R-0016': {'hit': 'darkorange', 'non_hit': 'lightcoral'},
     'DIG-R-0017': {'hit': 'darkgreen', 'non_hit': 'lightgreen'},
     'DIG-R-0018': {'hit': 'darkred', 'non_hit': 'lightpink'}
+}
+line_styles = {
+    'DIG-R-0015': '-',
+    'DIG-R-0016': '--',
+    'DIG-R-0017': '-',
+    'DIG-R-0018': '--',
 }
 
 dataframes_sess = {}
@@ -120,19 +126,26 @@ def plot_moving_avg_accuracy(dataframes_trials, color_palette):
         plt.plot(
             range(len(trials)),
             trials['moving_avg_accuracy'] * 100,  # Convert to percentage
-            marker='o',
             color=subject_color,
             label=f'Moving Avg Accuracy (Window Size: {window_size})'
         )
-        plt.xlabel('Trials (Relative Index)')
-        plt.ylabel('Moving Average of Accuracy (%)')
-        plt.title(f'Moving Average of Accuracy Across Trials - {subject}')
-        plt.grid(True)
-        plt.legend()
+
+        # Updated styling
+        plt.xlabel('Trials (Relative Index)', fontsize=14)
+        plt.ylabel('Moving Average of Accuracy (%)', fontsize=14)
+        plt.legend(fontsize=14)
+        plt.xticks(fontsize=12)
+        plt.yticks(fontsize=12)
+
+        # Remove top and right spines
+        ax = plt.gca()
+        ax.spines['top'].set_visible(False)
+        ax.spines['right'].set_visible(False)
+
         plt.tight_layout()
         plt.show()
+# Call the function
 plot_moving_avg_accuracy(dataframes_trials, color_palette)
-
 
 # Process parsed_events column
 def process_parsed_events_hit_trials(data):
@@ -215,12 +228,6 @@ for subject in subjects:
 
 
 #Plotting Hits per Session
-line_styles = {
-    'DIG-R-0015': '-',
-    'DIG-R-0016': '--',
-    'DIG-R-0017': '-',
-    'DIG-R-0018': '--',
-}
 legend_order = ['DIG-R-0015', 'DIG-R-0016', 'DIG-R-0017', 'DIG-R-0018']
 def plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_order):
     plt.figure(figsize=(12, 6))
@@ -243,14 +250,22 @@ def plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_or
     sorted_handles, sorted_labels = zip(*sorted_handles_labels)
 
     # Add labels, legend, and title
-    plt.xlabel('Session')
-    plt.ylabel('Accuracy')
-    plt.title('Accuracy across Sessions')
-    plt.legend(sorted_handles, sorted_labels, title='Subject', fontsize = 12)
+    plt.xlabel('Session', fontsize=14)
+    plt.ylabel('Accuracy', fontsize=14)
+    plt.legend(sorted_handles, sorted_labels, title='Subject', fontsize=14)
+
+    # Styling modifications
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+
+    # Remove top and right spines
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
     plt.grid(True)
     plt.tight_layout()
-
     plt.show()
+
 plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_order)
 
 #Poke identities and distribution for all trials (separated into hit/no hit)
@@ -400,19 +415,20 @@ for subject in subjects:
 def calculate_session_bias(trials):
     # Group trials by session ID
     session_groups = trials.groupby('sessid')
-
     biases = []
 
     for _, session_data in session_groups:
         # Calculate L hit % and R hit %
-        left_trials = session_data[session_data['data'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'L')]
-        right_trials = session_data[session_data['data'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'R')]
+        left_trials = session_data[
+            session_data['data'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'L')]
+        right_trials = session_data[
+            session_data['data'].apply(lambda x: json.loads(x)['vals'].get('SoundCueSide') == 'R')]
 
         left_hits = len(left_trials[left_trials['hit'] == 1])
         right_hits = len(right_trials[right_trials['hit'] == 1])
 
-        left_hit_percentage = (left_hits / len(left_trials)) * 100
-        right_hit_percentage = (right_hits / len(right_trials)) * 100
+        left_hit_percentage = (left_hits / len(left_trials)) * 100 if len(left_trials) > 0 else 0
+        right_hit_percentage = (right_hits / len(right_trials)) * 100 if len(right_trials) > 0 else 0
 
         # Calculate bias
         if left_hit_percentage + right_hit_percentage > 0:
@@ -424,29 +440,55 @@ def calculate_session_bias(trials):
 
     return biases
 
-for subject in subjects:
-    result = dataframes_trials[subject]
 
-    # Calculate session-wise bias
-    biases = calculate_session_bias(result)
+def plot_session_bias(dataframes_trials, color_palette, line_styles):
+    # Find the maximum number of sessions across all subjects
+    max_sessions = max(len(calculate_session_bias(dataframes_trials[subject])) for subject in subjects)
 
-    # Create evenly spaced x-axis points
-    x_points = list(range(1, len(biases) + 1))
+    # Create the plot
+    plt.figure(figsize=(12, 6))
 
-    subject_color = color_palette[subject]['hit']
+    # Plot bias for each subject
+    for subject in subjects:
+        result = dataframes_trials[subject]
 
-    # Plot
-    plt.figure(figsize=(10, 6))
-    plt.plot(x_points, biases, marker='o', color = subject_color, linestyle='-', label=f"Subject {subject}")
+        # Calculate session-wise bias
+        biases = calculate_session_bias(result)
+
+        # Create evenly spaced x-axis points
+        x_points = list(range(1, len(biases) + 1))
+
+        # Use subject-specific hit color and line style
+        subject_color = color_palette[subject]['hit']
+
+        plt.plot(
+            x_points,
+            biases,
+            marker='o',
+            color=subject_color,
+            linestyle=line_styles[subject],
+            label=subject
+        )
+
+    # Styling
+    plt.xlabel('Session', fontsize=14)
+    plt.ylabel('Bias', fontsize=14)
     plt.ylim(-1.1, 1.1)
-    plt.xlabel('Session Number')
-    plt.ylabel('Bias')
-    plt.title(f'Bias Across Sessions for Subject {subject}')
     plt.axhline(0, color='black', linestyle='--', linewidth=0.8)  # Add horizontal line at y=0
-    plt.grid()
-    plt.legend()
+
+    plt.legend(title='Subject', fontsize=14)
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+
+    # Remove top and right spines
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    plt.tight_layout()
     plt.show()
 
+plot_session_bias(dataframes_trials, color_palette, line_styles)
 
 # Calculation of Percentage of non-hit trials with 0 pokes
 def calculate_zero_poke_trials(trials):
@@ -478,7 +520,7 @@ def calculate_zero_poke_trials(trials):
 
 
 # Calculation of RT and plotting of RT per session
-def analyze_reaction_times(dataframes_trials, dataframes_sess, color_palette):
+def analyze_reaction_times(dataframes_trials, dataframes_sess, color_palette, line_styles):
     # Overall average RT for each subject
     for subject in subjects:
         trials = dataframes_trials[subject]
@@ -509,19 +551,24 @@ def analyze_reaction_times(dataframes_trials, dataframes_sess, color_palette):
             rt_per_session,
             marker='o',
             color=subject_color,
-            label=subject
+            label=subject,
+            linestyle = line_styles[subject]
         )
 
-    plt.xlabel('Session')
-    plt.ylabel('Average Reaction Time')
-    plt.title('Average Reaction Time Across Sessions')
-    plt.legend(title='Subject')
-    plt.grid(True)
+    plt.xlabel('Session', fontsize = 14)
+    plt.ylabel('Average Reaction Time', fontsize = 14)
+    #plt.title('Average Reaction Time Across Sessions', fontsize = 12)
+    plt.legend(title='Subject', fontsize = 14)
+    plt.xticks(fontsize = 12)
+    plt.yticks(fontsize = 12)
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
     plt.tight_layout()
     plt.show()
 
 #Calculate average RT and plot reaction time per session
-analyze_reaction_times(dataframes_trials, dataframes_sess, color_palette)
+analyze_reaction_times(dataframes_trials, dataframes_sess, color_palette, line_styles)
 
 # Calculations of % of 0 pokes in not initiated trials
 print("Zero Poke Trials Analysis:")
