@@ -52,11 +52,12 @@ dataframes_sess['DIG-R-0018'].iloc[0, dataframes_sess['DIG-R-0018'].columns.get_
 
 #Extracts variables for all trials for each subject
 for subject in subjects:
+    sessids = dataframes_sess[subject]['sessid']
     query_trials = f"""
         SELECT x.subjid, x.hit, x.viol, x.RT, x.n_pokes, x.sessid, x.parsed_events, x.trialid, x.data
         FROM beh.trialsview x
         WHERE subjid = '{subject}'
-        AND x.sessid >= {thresholds[subject]}
+        AND x.sessid IN ({', '.join([str(sessid) for sessid in sessids])})
         ORDER BY x.trialtime ASC
     """
     result = pd.read_sql(query_trials, dbe)
@@ -262,7 +263,7 @@ def plot_sessions_vs_hits(dataframes_sess, color_palette, line_styles, legend_or
     ax = plt.gca()
     ax.spines['top'].set_visible(False)
     ax.spines['right'].set_visible(False)
-    plt.grid(True)
+    plt.grid(False)
     plt.tight_layout()
     plt.show()
 
@@ -580,3 +581,85 @@ for subject in subjects:
     print(f"  Total Non-Hit Trials: {total_non_hit_trials}")
     print(f"  Zero Poke Trials: {zero_poke_trials}")
     print(f"  Percentage of Zero Poke Trials: {zero_poke_percentage:.2f}%")
+
+
+def calculate_zero_poke_trials_per_session(dataframes_trials):
+    zero_poke_percentages = {}
+
+    for subject in subjects:
+        trials = dataframes_trials[subject]
+
+        # Group trials by session
+        session_groups = trials.groupby('sessid')
+
+        zero_poke_percentages[subject] = []
+
+        for sessid, session_data in session_groups:
+            # Total trials in the session
+            total_trials = len(session_data)
+
+            # Count zero-poke trials
+            zero_poke_trials = 0
+            for trial in session_data['parsed_events']:
+                parsed_events = json.loads(trial)
+
+                # Count pokes
+                poke_events = {key: value for key, value in parsed_events['vals']['Events'].items() if "In" in key}
+
+                total_pokes = 0
+                for key, value in poke_events.items():
+                    if key in parsed_events['info']['Events'] and "In" in key:
+                        dim_value = parsed_events['info']['Events'][key]['dim__']
+                        if len(dim_value) > 1:
+                            total_pokes += dim_value[1]
+
+                if total_pokes == 0:
+                    zero_poke_trials += 1
+
+            # Calculate percentage
+            zero_poke_percentage = (zero_poke_trials / total_trials) * 100
+
+            zero_poke_percentages[subject].append(zero_poke_percentage)
+
+    return zero_poke_percentages
+
+
+def plot_zero_poke_trials_per_session(zero_poke_percentages, color_palette, line_styles):
+    plt.figure(figsize=(12, 6))
+
+    for subject in subjects:
+        # Create x points from 1 to number of sessions
+        x_points = list(range(1, len(zero_poke_percentages[subject]) + 1))
+
+        # Use subject-specific hit color for plotting
+        subject_color = color_palette[subject]['hit']
+
+        plt.plot(
+            x_points,
+            zero_poke_percentages[subject],
+            marker='o',
+            color=subject_color,
+            label=subject,
+            linestyle=line_styles[subject]
+        )
+
+    plt.xlabel('Session', fontsize=14)
+    plt.ylabel('Zero-Poke Trials (%)', fontsize=14)
+    plt.legend(title='Subject', fontsize=14)
+    plt.xticks(fontsize=12)
+    plt.yticks(fontsize=12)
+
+    # Remove top and right spines
+    ax = plt.gca()
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    plt.tight_layout()
+    plt.show()
+
+
+# Calculate zero-poke trials percentages
+zero_poke_percentages = calculate_zero_poke_trials_per_session(dataframes_trials)
+
+# Plot zero-poke trials percentages
+plot_zero_poke_trials_per_session(zero_poke_percentages, color_palette, line_styles)
